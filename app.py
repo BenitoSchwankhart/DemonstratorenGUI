@@ -1,4 +1,5 @@
 import streamlit as st
+from pages import home, page1, page2
 
 # Sidebar-Konfiguration 
 st.set_page_config(
@@ -10,13 +11,13 @@ st.set_page_config(
 
 # Sidebar-Navigation
 pages = {
-    "Home": "home",
-    "Seite 1": "page1",
-    "Seite 2": "page2"
+    "Home": home,
+    "Seite 1": page1,
+    "Seite 2": page2
 }
 
 selected_page = st.sidebar.radio("Navigation", list(pages.keys()))
 
 # Laden der ausgewählten Seite 
-page = __import__(f"pages.{pages[selected_page]}")
+page = pages[selected_page]
 page.main()
