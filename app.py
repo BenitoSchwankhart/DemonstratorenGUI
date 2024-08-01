@@ -1,6 +1,6 @@
 import streamlit as st
-from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input, decode_predictions
 import torch
+from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input, decode_predictions
 from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 from transformers import DetrImageProcessor, DetrForObjectDetection
 from diffusers import StableDiffusionPipeline
@@ -9,6 +9,7 @@ from deepface import DeepFace
 from PIL import Image
 import numpy as np
 import io
+import soundfile as sf
 
 @st.cache_resource
 def load_tensorflow_model():
@@ -43,11 +44,11 @@ def load_image_generation_model():
         return None
 
 @st.cache_resource
-def load_voice_cloning_model():
+def load_tts_model():
     try:
-        return TTS("tts_models/en/ljspeech/tacotron2-DDC")
+        return TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2").to("cuda" if torch.cuda.is_available() else "cpu")
     except Exception as e:
-        st.error(f"Fehler beim Laden des Voice-Cloning-Modells: {str(e)}")
+        st.error(f"Fehler beim Laden des TTS-Modells: {str(e)}")
         return None
 
 @st.cache_resource
@@ -76,10 +77,13 @@ def generate_image(prompt, model):
         image = model(prompt).images[0]
     return image
 
-def clone_voice(text, model):
-    with st.spinner('Generiere Sprachausgabe...'):
-        wav = model.tts(text)
-    return wav
+def clone_voice(text, reference_audio, model, language="en"):
+    with st.spinner('Generiere geklonte Sprachausgabe...'):
+        wav = model.tts(text=text, speaker_wav=reference_audio, language=language)
+        virtual_file = io.BytesIO()
+        sf.write(virtual_file, wav, model.synthesizer.output_sample_rate, format="WAV")
+        virtual_file.seek(0)
+        return virtual_file
 
 def generate_text(prompt, model, tokenizer):
     with st.spinner('Generiere Text...'):
@@ -125,7 +129,7 @@ def main():
             "PyTorch Modell", 
             "Hugging Face Pipeline",
             "Bildgenerierung (Stable Diffusion)",
-            "Voice Cloning (TTS)",
+            "Voice Cloning (Coqui TTS)",
             "Textgenerierung (Dolly)",
             "Alterserkennung",
             "Objekterkennung (DETR)"
@@ -179,14 +183,19 @@ def main():
                 image = generate_image(prompt, model)
                 st.image(image)
 
-    elif model_choice == "Voice Cloning (TTS)":
-        model = load_voice_cloning_model()
+    elif model_choice == "Voice Cloning (Coqui TTS)":
+        model = load_tts_model()
         if model:
-            st.write("TTS Modell geladen")
-            text = st.text_input("Geben Sie den zu sprechenden Text ein:")
-            if text:
-                wav = clone_voice(text, model)
-                st.audio(wav, format="audio/wav")
+            st.write("Coqui TTS Modell geladen")
+            text = st.text_area("Geben Sie den Text ein, der gesprochen werden soll:", value="Hallo, dies ist ein Test für Voice Cloning.")
+            language = st.selectbox("Wählen Sie die Sprache:", ["en", "de", "es", "fr", "it", "pl", "pt", "tr"])
+            reference_audio = st.file_uploader("Laden Sie eine Referenz-Audiodatei hoch (WAV-Format):", type=['wav'])
+            if st.button("Stimme klonen und Text generieren"):
+                if reference_audio is not None and text:
+                    cloned_audio = clone_voice(text, reference_audio, model, language)
+                    st.audio(cloned_audio, format='audio/wav')
+                else:
+                    st.warning("Bitte laden Sie eine Referenz-Audiodatei hoch und geben Sie einen Text ein.")
 
     elif model_choice == "Textgenerierung (Dolly)":
         model, tokenizer = load_text_generation_model()
